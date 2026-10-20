@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
-import { config, assertSafeIdentifier, identityMappingConfigured, allowedTestRoles } from './config.js';
+import { config, identityMappingConfigured, allowedTestRoles } from './config.js';
 
 export type TestMembership = { schoolId: string; role: string };
 export class IdentityMappingUnavailable extends Error {
