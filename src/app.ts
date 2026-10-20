@@ -95,6 +95,91 @@ export function buildApp(deps: Dependencies = {
     }
   });
 
+  app.get('/v1/test/db-context', async (request, reply) => {
+    if ((options.appEnv ?? config.APP_ENV) !== 'staging' || !(options.enableTestEndpoints ?? config.ENABLE_TEST_ENDPOINTS)) {
+      return reply.code(404).send({ error: 'not_found' });
+    }
+    const auth = request.headers.authorization;
+    if (!auth || !/^Bearer\\s+\\S+$/i.test(auth)) return reply.code(401).send({ error: 'unauthorized' });
+    if (!deps.supabase) return reply.code(503).send({ error: 'identity_verification_unavailable' });
+    if (!deps.db) return reply.code(503).send({ error: 'database_unavailable' });
+    const token = auth.replace(/^Bearer\\s+/i, '');
+    let userId: string;
+    try {
+      const { data, error } = await deps.supabase.auth.getUser(token);
+      if (error || !data.user?.id) return reply.code(401).send({ error: 'unauthorized' });
+      userId = data.user.id;
+    } catch {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+
+    let client: Awaited<ReturnType<NonNullable<typeof deps.db>['connect']>> | null = null;
+    let inTransaction = false;
+    try {
+      const membership = await resolveTestMembership(deps.db, userId);
+      client = await deps.db.connect();
+      await client.query('BEGIN');
+      inTransaction = true;
+      // Fixed role name only; no request-controlled SQL identifiers. The login role must
+      // be explicitly granted membership in this non-owner, NOBYPASSRLS role.
+      await client.query('SET LOCAL ROLE schoolpro_runtime');
+      await client.query(
+        "SELECT set_config('app.school_id', $1, true), set_config('app.user_id', $2, true), set_config('app.role', $3, true)",
+        [membership.schoolId, userId, membership.role]
+      );
+      const check = await client.query<{
+        current_role: string;
+        session_role: string;
+        bypass_rls: boolean;
+        owns_schoolpro_tables: boolean;
+        tenant_context: string | null;
+        user_context: string | null;
+        role_context: string | null;
+      }>(`
+        SELECT current_user AS current_role,
+               session_user AS session_role,
+               COALESCE(r.rolbypassrls, TRUE) AS bypass_rls,
+               EXISTS (
+                 SELECT 1 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname IN ('public', 'private')
+                   AND c.relname LIKE 'schoolpro\\_%' ESCAPE '\\\\'
+                   AND c.relowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+               ) AS owns_schoolpro_tables,
+               current_setting('app.school_id', true) AS tenant_context,
+               current_setting('app.user_id', true) AS user_context,
+               current_setting('app.role', true) AS role_context
+        FROM pg_roles r WHERE r.rolname = current_user
+      `);
+      const row = check.rows[0];
+      if (!row || row.current_role !== 'schoolpro_runtime' || row.bypass_rls || row.owns_schoolpro_tables
+        || row.tenant_context !== membership.schoolId || row.user_context !== userId || row.role_context !== membership.role) {
+        await client.query('ROLLBACK');
+        inTransaction = false;
+        return reply.code(503).send({ error: 'runtime_role_invariant_failed' });
+      }
+      await client.query('ROLLBACK');
+      inTransaction = false;
+      return reply.code(200).send({
+        status: 'runtime_context_verified',
+        runtimeRole: row.current_role,
+        sessionRoleIsSeparate: row.session_role !== row.current_role,
+        bypassRls: row.bypass_rls,
+        ownsSchoolProTables: row.owns_schoolpro_tables,
+        tenantContextSetLocally: row.tenant_context === membership.schoolId,
+        transactionRolledBack: true
+      });
+    } catch (error) {
+      if (client && inTransaction) {
+        try { await client.query('ROLLBACK'); } catch { /* connection cleanup below */ }
+      }
+      request.log.warn({ errType: error instanceof Error ? error.name : 'unknown' }, 'runtime context verification failed');
+      return reply.code(503).send({ error: 'runtime_context_unavailable' });
+    } finally {
+      client?.release();
+    }
+  });
+
   app.addHook('onReady', async () => {
     // Destructive fixtures are not implemented in this initial tranche. This flag is
     // deliberately insufficient by itself to enable any fixture endpoint.
