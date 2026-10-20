@@ -1,3 +1,4 @@
-# SchoolPro Trusted API
+# SchoolPro Trusted Migration API
 
-Staging-only trusted API for migration security testing. See the implementation branch for code and deployment instructions.
+Staging-only API for controlled migration verification.
+Production migration and cutover are not authorized.
