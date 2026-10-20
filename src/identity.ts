@@ -45,7 +45,7 @@ export async function resolveTestMembership(
   const schoolColumn = assertSafeIdentifier(config.IDENTITY_SCHOOL_ID_COLUMN);
   const roleColumn = assertSafeIdentifier(config.IDENTITY_ROLE_COLUMN);
   const qualified = `"${config.IDENTITY_SCHEMA}"."${table}"`;
-  const allowedSchools = [config.SYNTHETIC_SCHOOL_A_ID, config.SYNTHETIC_SCHOOL_B_ID];
+  const allowedSchools = [config.SYNTHETIC_SCHOOL_A_ID, config.SYNTHETIC_SCHOOL_B_ID].filter((id): id is string => Boolean(id));
   if (selectedSchoolId && !allowedSchools.includes(selectedSchoolId)) {
     throw new IdentityMappingUnavailable('Requested school is outside the operator-configured synthetic tenant allowlist');
   }
