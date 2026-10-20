@@ -1,5 +1,14 @@
 # Test status — 2026-10-20
 
+## Latest CI validation — 2026-10-20
+
+- GitHub Actions run [39443355591](https://github.com/Hassan-625/schoolpro-migration-api/actions/runs/39443355591) for commit `46e382524064d57ae046ee21cd5fb79efc07eeaf` completed the workflow's substantive steps: `npm ci`, lint, typecheck, build and unit tests. The test step reports 4 files and 26 tests passed; npm audit reports 0 vulnerabilities.
+- Added `/v1/test/db-context`, staging-only and disabled by default. It validates server-side token verification, the operator-reviewed synthetic membership gate, fixed `SET LOCAL ROLE schoolpro_runtime`, transaction-local identity context, distinct session/runtime roles, `NOBYPASSRLS`, non-superuser/non-login runtime attributes, non-ownership of SchoolPro tables, rollback and pooled-client release.
+- Unit tests cover hidden-by-default behavior, missing bearer token, and invalid-token rejection before acquiring a pooled database client. No successful live database-context request has been made.
+- The Aiven PG Editor access attempt returned HTTP 403 because the configured IP filter blocked the tool egress. No transient IP was allowlisted. Aiven network/role integration and the 22-case tenant acceptance suite remain BLOCKED / NOT RUN.
+
+
+
 ## Completed checks
 
 - TypeScript source/test syntax diagnostics: 7 of 7 files reported syntax OK using TypeScript transpile diagnostics before the latest readiness fix; the updated source/test files were rechecked after that fix.
