@@ -24,3 +24,11 @@
 
 ## Test coverage limits
 The unit tests do not prove RLS. Cross-tenant read/write, destination-row mutation, transaction rollback, and pool-context reuse tests are not yet implemented because no reviewed test schema/identity contract or staging database credentials are available. Do not interpret CI unit tests as RLS acceptance.
+
+
+## Identity mapping contract aligned to live Supabase schema
+- `public.schoolpro_members` has `user_id`, `school_id`, and `role`, but no membership active/status column. The API no longer assumes a nonexistent active column.
+- Supabase Auth `getUser(token)` validates the bearer token. The API separately reads `public.profiles.status` from Supabase and requires `active`; the target PostgreSQL membership row must exist for an operator-configured synthetic school and an allowlisted role.
+- `schoolId` is only an optional selector among the two configured synthetic schools. The resolver verifies an actual membership for that selected school; a caller-supplied ID never grants access by itself.
+- The target membership lookup needs SELECT on `public.schoolpro_members`; the separate runtime-context transaction switches to the fixed `schoolpro_runtime` role. These grants and the session login role still require live Aiven verification before credentials are configured.
+
