@@ -27,4 +27,4 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) and [SECURITY.md](./SECURITY.md). `render.y
 
 ## Verification status
 
-See [TEST-STATUS.md](./TEST-STATUS.md). Source syntax/archive checks have passed, but dependency-based lint/typecheck/build/unit tests and PostgreSQL/RLS integration tests are not yet verified. Do not treat this repository draft as deployment-approved.
+See [TEST-STATUS.md](./TEST-STATUS.md). Latest CI run [39443355591](https://github.com/Hassan-625/schoolpro-migration-api/actions/runs/39443355591) for commit `46e382524064d57ae046ee21cd5fb79efc07eeaf` passed lint, typecheck, build, and 26 unit tests across 4 files; `npm ci` reported 0 vulnerabilities. Actual Aiven connectivity, identity mapping, table grants/RLS integration, and the full 22-case acceptance suite remain unverified. This repository is not deployment-approved.
