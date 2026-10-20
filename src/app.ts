@@ -4,7 +4,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config, identityMappingConfigured, requiredTables } from './config.js';
 import { pool } from './db.js';
 import type { PoolClient } from 'pg';
-import { IdentityMappingUnavailable, MembershipNotFound, AmbiguousMembership, UnauthorizedTestRole, resolveTestMembership } from './identity.js';
+import { IdentityMappingUnavailable, MembershipNotFound, ProfileInactive, AmbiguousMembership, UnauthorizedTestRole, resolveTestMembership } from './identity.js';
 
 export type Dependencies = { db: typeof pool; supabase: SupabaseClient | null };
 export type AppOptions = { appEnv?: string; enableTestEndpoints?: boolean };
@@ -45,7 +45,7 @@ export function buildApp(deps: Dependencies = {
       );
       if (mapping.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_relation_missing' });
       if (mapping.rows[0]?.can_select !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
-      const mappingColumns = [config.IDENTITY_USER_ID_COLUMN, config.IDENTITY_SCHOOL_ID_COLUMN, config.IDENTITY_ROLE_COLUMN, config.IDENTITY_ACTIVE_COLUMN];
+      const mappingColumns = [config.IDENTITY_USER_ID_COLUMN, config.IDENTITY_SCHOOL_ID_COLUMN, config.IDENTITY_ROLE_COLUMN];
       for (const column of mappingColumns) {
         if (!column) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_columns_unconfigured' });
         const found = await deps.db.query(
@@ -84,9 +84,13 @@ export function buildApp(deps: Dependencies = {
       return reply.code(401).send({ error: 'unauthorized' });
     }
     try {
-      const membership = await resolveTestMembership(deps.db, userId);
+      const profile = await deps.supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
+      if (profile.error) return reply.code(503).send({ error: 'identity_mapping_unavailable' });
+      if (!profile.data || profile.data.status !== 'active') return reply.code(403).send({ error: 'profile_inactive' });
+      const membership = await resolveTestMembership(deps.db, userId, profile.data.status);
       return reply.code(200).send({ userId, membership });
     } catch (error) {
+      if (error instanceof ProfileInactive) return reply.code(403).send({ error: 'profile_inactive' });
       if (error instanceof MembershipNotFound) return reply.code(403).send({ error: 'membership_not_found' });
       if (error instanceof AmbiguousMembership) return reply.code(409).send({ error: 'membership_ambiguous' });
       if (error instanceof UnauthorizedTestRole) return reply.code(403).send({ error: 'role_not_allowed_for_test' });
@@ -117,7 +121,9 @@ export function buildApp(deps: Dependencies = {
     let client: PoolClient | null = null;
     let inTransaction = false;
     try {
-      const membership = await resolveTestMembership(deps.db, userId);
+      const profile = await deps.supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
+      if (profile.error || !profile.data || profile.data.status !== 'active') throw new IdentityMappingUnavailable('Active Supabase profile could not be verified');
+      const membership = await resolveTestMembership(deps.db, userId, profile.data.status);
       client = await deps.db.connect();
       await client.query('BEGIN');
       inTransaction = true;
