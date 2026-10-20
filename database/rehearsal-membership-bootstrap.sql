@@ -114,6 +114,8 @@ REVOKE ALL ON FUNCTION private.resolve_schoolpro_test_membership(uuid) FROM PUBL
 GRANT EXECUTE ON FUNCTION private.resolve_schoolpro_test_membership(uuid)
   TO schoolpro_api_access;
 GRANT USAGE ON SCHEMA private TO schoolpro_api_access;
+-- API access role can switch into runtime but does not inherit runtime table privileges.
+GRANT schoolpro_runtime TO schoolpro_api_access WITH INHERIT FALSE, SET TRUE;
 
 -- Narrow runtime SELECT grants; row visibility remains governed by RLS.
 GRANT SELECT (user_id, school_id, role)
@@ -125,7 +127,6 @@ GRANT USAGE ON SCHEMA public TO schoolpro_runtime;
 -- Deliberately not granted here because the actual application LOGIN role is not yet
 -- verified. After provisioning a dedicated non-owner, non-superuser LOGIN, the DBA must:
 --   GRANT schoolpro_api_access TO <verified_api_login> WITH INHERIT TRUE, SET TRUE;
---   GRANT schoolpro_runtime TO <verified_api_login> WITH INHERIT FALSE, SET TRUE;
 -- Never use avnadmin or a table-owner role as the API login.
 -- Do not insert/update allowlist rows until synthetic school A/B IDs are verified.
 
