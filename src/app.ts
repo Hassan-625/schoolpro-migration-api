@@ -55,6 +55,11 @@ export function buildApp(deps: Dependencies = {
            current_user AS login_role,
            (current_user <> 'avnadmin') AS login_not_admin,
            NOT EXISTS (
+             SELECT 1 FROM pg_roles login_role
+             WHERE login_role.rolname = current_user
+               AND (login_role.rolsuper OR login_role.rolbypassrls)
+           ) AS login_role_not_privileged,
+           NOT EXISTS (
              SELECT 1 FROM pg_class c
              JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = 'public'
@@ -85,7 +90,7 @@ export function buildApp(deps: Dependencies = {
         `
       );
       const bootstrapRow = bootstrap.rows[0];
-      if (!bootstrapRow?.login_not_admin || !bootstrapRow?.login_not_table_owner) {
+      if (!bootstrapRow?.login_not_admin || !bootstrapRow?.login_role_not_privileged || !bootstrapRow?.login_not_table_owner) {
         return reply.code(503).send({ status: 'not_ready', reason: 'database_login_role_not_restricted' });
       }
       if (!bootstrapRow?.bootstrap_function_present || !bootstrapRow?.bootstrap_execute || !bootstrapRow?.bootstrap_owner_safe) {
@@ -134,7 +139,6 @@ export function buildApp(deps: Dependencies = {
       const membership = await resolveTestMembership(deps.db, userId, profileStatus);
       return reply.code(200).send({ userId, membership });
     } catch (error) {
-      if (error instanceof ProfileInactive) return reply.code(403).send({ error: 'profile_inactive' });
       if (error instanceof ProfileInactive) return reply.code(403).send({ error: 'profile_inactive' });
       if (error instanceof MembershipNotFound) return reply.code(403).send({ error: 'membership_not_found' });
       if (error instanceof AmbiguousMembership) return reply.code(409).send({ error: 'membership_ambiguous' });
