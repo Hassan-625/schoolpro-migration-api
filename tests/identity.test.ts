@@ -50,7 +50,11 @@ describe('source-equivalent active-account and membership validation', () => {
   it('rejects a malformed synthetic school allowlist', () => {
     expect(() => validateTestMembership([row], 'active', roles, [schoolA, schoolA])).toThrow(IdentityMappingUnavailable);
   });
-  it('accepts only an active profile, one allowlisted school membership and an approved role', () => {
-    expect(validateTestMembership([row], 'active', roles, [schoolA, schoolB])).toEqual({ schoolId: schoolA, role: 'exam_officer' });
+  it.each([
+    [schoolA, 'exam_officer'],
+    [schoolB, 'proprietor']
+  ])('accepts the approved role in synthetic school %s', (schoolId, role) => {
+    expect(validateTestMembership([{ school_id: schoolId, role }], 'active', roles, [schoolA, schoolB]))
+      .toEqual({ schoolId, role });
   });
 });
