@@ -75,3 +75,39 @@ describe('staging identity endpoint', () => {
     await app.close();
   });
 });
+
+
+describe('staging database runtime-context endpoint', () => {
+  it('is hidden unless APP_ENV is staging and the explicit flag is enabled', async () => {
+    const app = buildApp({ db: fakeDb, supabase: fakeSupabase(vi.fn()) }, { appEnv: 'production', enableTestEndpoints: true });
+    const response = await app.inject({ method: 'GET', url: '/v1/test/db-context' });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('rejects a missing bearer token before touching the database', async () => {
+    const query = vi.fn();
+    const connect = vi.fn();
+    const db = { query, connect } as unknown as Pool;
+    const app = buildApp({ db, supabase: fakeSupabase(vi.fn()) }, { appEnv: 'staging', enableTestEndpoints: true });
+    const response = await app.inject({ method: 'GET', url: '/v1/test/db-context' });
+    expect(response.statusCode).toBe(401);
+    expect(query).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('rejects an invalid bearer token before acquiring a pooled client', async () => {
+    const getUser = vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('invalid token') });
+    const query = vi.fn();
+    const connect = vi.fn();
+    const db = { query, connect } as unknown as Pool;
+    const app = buildApp({ db, supabase: fakeSupabase(getUser) }, { appEnv: 'staging', enableTestEndpoints: true });
+    const response = await app.inject({ method: 'GET', url: '/v1/test/db-context', headers: { authorization: 'Bearer invalid-token' } });
+    expect(response.statusCode).toBe(401);
+    expect(getUser).toHaveBeenCalledWith('invalid-token');
+    expect(query).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
