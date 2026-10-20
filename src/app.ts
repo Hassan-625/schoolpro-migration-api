@@ -45,7 +45,7 @@ export function buildApp(deps: Dependencies = {
       );
       if (mapping.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_relation_missing' });
       if (mapping.rows[0]?.can_select !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
-      const mappingColumns = [config.IDENTITY_USER_ID_COLUMN, config.IDENTITY_SCHOOL_ID_COLUMN, config.IDENTITY_ROLE_COLUMN, config.IDENTITY_ACTIVE_COLUMN];
+      const mappingColumns = [config.IDENTITY_USER_ID_COLUMN, config.IDENTITY_SCHOOL_ID_COLUMN, config.IDENTITY_ROLE_COLUMN];
       for (const column of mappingColumns) {
         if (!column) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_columns_unconfigured' });
         const found = await deps.db.query(
@@ -84,7 +84,8 @@ export function buildApp(deps: Dependencies = {
       return reply.code(401).send({ error: 'unauthorized' });
     }
     try {
-      const membership = await resolveTestMembership(deps.db, userId);
+      const requestedSchoolId = typeof (request.query as { schoolId?: unknown }).schoolId === 'string' ? (request.query as { schoolId: string }).schoolId : undefined;
+      const membership = await resolveTestMembership(deps.db, deps.supabase, userId, requestedSchoolId);
       return reply.code(200).send({ userId, membership });
     } catch (error) {
       if (error instanceof MembershipNotFound) return reply.code(403).send({ error: 'membership_not_found' });
@@ -117,7 +118,8 @@ export function buildApp(deps: Dependencies = {
     let client: PoolClient | null = null;
     let inTransaction = false;
     try {
-      const membership = await resolveTestMembership(deps.db, userId);
+      const requestedSchoolId = typeof (request.query as { schoolId?: unknown }).schoolId === 'string' ? (request.query as { schoolId: string }).schoolId : undefined;
+      const membership = await resolveTestMembership(deps.db, deps.supabase, userId, requestedSchoolId);
       client = await deps.db.connect();
       await client.query('BEGIN');
       inTransaction = true;
