@@ -132,6 +132,10 @@ export function buildApp(deps: Dependencies = {
         current_role: string;
         session_role: string;
         bypass_rls: boolean;
+        superuser: boolean;
+        can_login: boolean;
+        can_create_db: boolean;
+        can_create_role: boolean;
         owns_schoolpro_tables: boolean;
         tenant_context: string | null;
         user_context: string | null;
@@ -140,6 +144,10 @@ export function buildApp(deps: Dependencies = {
         SELECT current_user AS current_role,
                session_user AS session_role,
                COALESCE(r.rolbypassrls, TRUE) AS bypass_rls,
+               COALESCE(r.rolsuper, TRUE) AS superuser,
+               COALESCE(r.rolcanlogin, TRUE) AS can_login,
+               COALESCE(r.rolcreatedb, TRUE) AS can_create_db,
+               COALESCE(r.rolcreaterole, TRUE) AS can_create_role,
                EXISTS (
                  SELECT 1 FROM pg_class c
                  JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -153,7 +161,8 @@ export function buildApp(deps: Dependencies = {
         FROM pg_roles r WHERE r.rolname = current_user
       `);
       const row = check.rows[0];
-      if (!row || row.current_role !== 'schoolpro_runtime' || row.bypass_rls || row.owns_schoolpro_tables
+      if (!row || row.current_role !== 'schoolpro_runtime' || row.session_role === row.current_role
+        || row.bypass_rls || row.superuser || row.can_login || row.can_create_db || row.can_create_role || row.owns_schoolpro_tables
         || row.tenant_context !== membership.schoolId || row.user_context !== userId || row.role_context !== membership.role) {
         await client.query('ROLLBACK');
         inTransaction = false;
