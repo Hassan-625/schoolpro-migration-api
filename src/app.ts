@@ -38,21 +38,23 @@ export function buildApp(deps: Dependencies = {
       // must never let readiness pass without the mapping relation being present.
       const mappingName = `${config.IDENTITY_SCHEMA}.${config.IDENTITY_TABLE}`;
       const mapping = await deps.db.query(
-        `SELECT to_regclass($1) IS NOT NULL AS present,
-                CASE WHEN to_regclass($1) IS NULL THEN FALSE
-                     ELSE has_table_privilege(current_user, to_regclass($1), 'SELECT') END AS can_select`,
+        'SELECT to_regclass($1) IS NOT NULL AS present',
         [mappingName]
       );
       if (mapping.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_relation_missing' });
-      if (mapping.rows[0]?.can_select !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
       const mappingColumns = [config.IDENTITY_USER_ID_COLUMN, config.IDENTITY_SCHOOL_ID_COLUMN, config.IDENTITY_ROLE_COLUMN];
       for (const column of mappingColumns) {
         if (!column) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_columns_unconfigured' });
         const found = await deps.db.query(
-          'SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3) AS present',
-          [config.IDENTITY_SCHEMA, config.IDENTITY_TABLE, column]
+          `SELECT EXISTS (
+             SELECT 1 FROM information_schema.columns
+             WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+           ) AS present,
+           has_column_privilege(current_user, to_regclass($4), $3, 'SELECT') AS can_select`,
+          [config.IDENTITY_SCHEMA, config.IDENTITY_TABLE, column, mappingName]
         );
         if (found.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_column_missing' });
+        if (found.rows[0]?.can_select !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
       }
       const tables = requiredTables();
       for (const table of tables) {
