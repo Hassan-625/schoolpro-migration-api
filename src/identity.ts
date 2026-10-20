@@ -2,10 +2,18 @@ import type { Pool, PoolClient } from 'pg';
 import { config, assertSafeIdentifier, identityMappingConfigured, allowedTestRoles } from './config.js';
 
 export type TestMembership = { schoolId: string; role: string };
-export class IdentityMappingUnavailable extends Error {}
-export class MembershipNotFound extends Error {}
-export class AmbiguousMembership extends Error {}
-export class UnauthorizedTestRole extends Error {}
+export class IdentityMappingUnavailable extends Error {
+  constructor(message = 'Identity mapping is unavailable or has not been reviewed') { super(message); this.name = 'IdentityMappingUnavailable'; }
+}
+export class MembershipNotFound extends Error {
+  constructor(message = 'No active school membership') { super(message); this.name = 'MembershipNotFound'; }
+}
+export class AmbiguousMembership extends Error {
+  constructor(message = 'More than one active school membership') { super(message); this.name = 'AmbiguousMembership'; }
+}
+export class UnauthorizedTestRole extends Error {
+  constructor(message = 'Role is not approved for this test harness') { super(message); this.name = 'UnauthorizedTestRole'; }
+}
 
 export async function resolveTestMembership(db: Pool | PoolClient, authUserId: string): Promise<TestMembership> {
   if (!identityMappingConfigured()) throw new IdentityMappingUnavailable('Identity mapping has not been reviewed and enabled');
