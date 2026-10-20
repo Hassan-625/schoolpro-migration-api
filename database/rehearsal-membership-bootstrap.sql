@@ -58,6 +58,14 @@ CREATE POLICY schoolpro_bootstrap_allowlisted_members
     )
   );
 
+-- Temporarily grant the migration operator membership so the function is created with
+-- the intended owner. Membership is revoked immediately after function creation.
+DO $grant_owner$
+BEGIN
+  EXECUTE format('GRANT schoolpro_bootstrap_owner TO %I', current_user);
+END
+$grant_owner$;
+
 -- Function takes only the server-validated Supabase auth user UUID. It never accepts
 -- a caller-supplied school ID. Exactly two explicitly enabled A/B entries are mandatory.
 SET LOCAL ROLE schoolpro_bootstrap_owner;
@@ -94,6 +102,12 @@ BEGIN
 END
 $function$;
 RESET ROLE;
+
+DO $revoke_owner$
+BEGIN
+  EXECUTE format('REVOKE schoolpro_bootstrap_owner FROM %I', current_user);
+END
+$revoke_owner$;
 
 REVOKE CREATE ON SCHEMA private FROM schoolpro_bootstrap_owner;
 REVOKE ALL ON FUNCTION private.resolve_schoolpro_test_membership(uuid) FROM PUBLIC;
