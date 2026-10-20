@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Pool } from 'pg';
 
 const fakeSupabase = (getUser: ReturnType<typeof vi.fn>) => ({
-  auth: { getUser }
+  auth: { getUser }, from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue({ data: { status: 'active' }, error: null }) })) })) }))
 }) as unknown as SupabaseClient;
 const fakeDb = { query: vi.fn() } as unknown as Pool;
 afterEach(() => vi.restoreAllMocks());

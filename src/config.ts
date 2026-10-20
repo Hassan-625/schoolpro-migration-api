@@ -20,7 +20,6 @@ const EnvSchema = z.object({
   IDENTITY_USER_ID_COLUMN: identifier.optional(),
   IDENTITY_SCHOOL_ID_COLUMN: identifier.optional(),
   IDENTITY_ROLE_COLUMN: identifier.optional(),
-  IDENTITY_ACTIVE_COLUMN: identifier.optional(),
   TEST_ALLOWED_ROLES: z.string().default(''),
   SYNTHETIC_SCHOOL_A_ID: z.string().uuid().optional(),
   SYNTHETIC_SCHOOL_B_ID: z.string().uuid().optional(),
@@ -36,8 +35,9 @@ export const config = parsed.data;
 
 export function identityMappingConfigured(): boolean {
   return config.IDENTITY_MAPPING_VERIFIED && Boolean(
-    config.IDENTITY_TABLE && config.IDENTITY_USER_ID_COLUMN && config.IDENTITY_SCHOOL_ID_COLUMN && config.IDENTITY_ROLE_COLUMN && config.IDENTITY_ACTIVE_COLUMN &&
-    config.TEST_ALLOWED_ROLES.split(',').map((role) => role.trim()).filter(Boolean).length > 0
+    config.IDENTITY_TABLE && config.IDENTITY_USER_ID_COLUMN && config.IDENTITY_SCHOOL_ID_COLUMN && config.IDENTITY_ROLE_COLUMN &&
+    config.TEST_ALLOWED_ROLES.split(',').map((role) => role.trim()).filter(Boolean).length > 0 &&
+    config.SYNTHETIC_SCHOOL_A_ID && config.SYNTHETIC_SCHOOL_B_ID && config.SYNTHETIC_SCHOOL_A_ID !== config.SYNTHETIC_SCHOOL_B_ID
   );
 }
 
