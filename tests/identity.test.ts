@@ -15,7 +15,7 @@ describe('identity mapping fails closed until reviewed', () => {
     expect(result.rows).toHaveLength(1);
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0]?.[0]).toContain('private.resolve_schoolpro_test_membership($1::uuid)');
-    expect(query.mock.calls[0][0]).not.toContain('FROM "public"."schoolpro_members"');
+    expect(query.mock.calls[0]?.[0]).not.toContain('FROM "public"."schoolpro_members"');
     expect(query.mock.calls[0]?.[1]).toEqual(['00000000-0000-4000-8000-000000000001']);
   });
 
