@@ -100,10 +100,10 @@ export function buildApp(deps: Dependencies = {
       return reply.code(404).send({ error: 'not_found' });
     }
     const auth = request.headers.authorization;
-    if (!auth || !/^Bearer\\s+\\S+$/i.test(auth)) return reply.code(401).send({ error: 'unauthorized' });
+    if (!auth || !/^Bearer\s+\S+$/i.test(auth)) return reply.code(401).send({ error: 'unauthorized' });
     if (!deps.supabase) return reply.code(503).send({ error: 'identity_verification_unavailable' });
     if (!deps.db) return reply.code(503).send({ error: 'database_unavailable' });
-    const token = auth.replace(/^Bearer\\s+/i, '');
+    const token = auth.replace(/^Bearer\s+/i, '');
     let userId: string;
     try {
       const { data, error } = await deps.supabase.auth.getUser(token);
@@ -143,7 +143,7 @@ export function buildApp(deps: Dependencies = {
                  SELECT 1 FROM pg_class c
                  JOIN pg_namespace n ON n.oid = c.relnamespace
                  WHERE n.nspname IN ('public', 'private')
-                   AND c.relname LIKE 'schoolpro\\_%' ESCAPE '\\\\'
+                   AND c.relname LIKE 'schoolpro!_%' ESCAPE '!'
                    AND c.relowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
                ) AS owns_schoolpro_tables,
                current_setting('app.school_id', true) AS tenant_context,
