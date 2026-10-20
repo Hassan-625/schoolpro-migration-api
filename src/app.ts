@@ -3,6 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config, identityMappingConfigured, requiredTables } from './config.js';
 import { pool } from './db.js';
+import type { PoolClient } from 'pg';
 import { IdentityMappingUnavailable, MembershipNotFound, AmbiguousMembership, UnauthorizedTestRole, resolveTestMembership } from './identity.js';
 
 export type Dependencies = { db: typeof pool; supabase: SupabaseClient | null };
@@ -113,7 +114,7 @@ export function buildApp(deps: Dependencies = {
       return reply.code(401).send({ error: 'unauthorized' });
     }
 
-    let client: Awaited<ReturnType<NonNullable<typeof deps.db>['connect']>> | null = null;
+    let client: PoolClient | null = null;
     let inTransaction = false;
     try {
       const membership = await resolveTestMembership(deps.db, userId);
