@@ -17,8 +17,11 @@ export function buildApp(deps: Dependencies = {
   void app.register(rateLimit, { max: 60, timeWindow: '1 minute', keyGenerator: (request) => request.ip });
 
   app.setErrorHandler((error, request, reply) => {
-    request.log.warn({ errType: error.name, statusCode: error.statusCode ?? 500 }, 'request failed');
-    const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    const candidateStatus = typeof error === 'object' && error !== null && 'statusCode' in error
+      && typeof error.statusCode === 'number' ? error.statusCode : 500;
+    request.log.warn({ errType: normalizedError.name, statusCode: candidateStatus }, 'request failed');
+    const status = candidateStatus >= 400 && candidateStatus < 500 ? candidateStatus : 500;
     return reply.code(status).send({ error: status === 500 ? 'internal_error' : 'request_rejected', requestId: request.id });
   });
 
