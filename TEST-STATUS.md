@@ -45,3 +45,11 @@ Syntax diagnostics and archive integrity are not substitutes for a package-aware
 - Mapping configuration requires two distinct synthetic school UUIDs and an explicit allowed-role list.
 - `/ready` now verifies mapping relation existence, runtime SELECT privilege, and the configured user/school/role/active columns, using parameterized catalog queries.
 - These are source-level hardening changes only. No runtime schema or production configuration was changed; unit/integration tests remain blocked by dependency installation.
+
+
+## Source identity contract reconciliation — 2026-10-20
+
+- Fresh live Supabase catalog confirmed `public.schoolpro_members` columns are `id`, `school_id`, `user_id`, `role`, `created_at`, and `position_title`; there is no active/status column. `public.profiles.status` is the authoritative active-account signal and remains Supabase-bound.
+- New branch `migration/source-identity-contract-20261020` changes the staging resolver to check the Supabase profile status and the Aiven-side membership relation, and makes the optional school selector a selector only after membership verification. It removes the invalid assumption that membership rows have an active flag.
+- This is source-level contract alignment, not live integration proof. The branch must pass CI; actual profile lookup, Aiven membership SELECT grants, runtime role switch, TLS, and the consolidated RLS test suite remain unverified until a safe network/credential path is configured.
+
