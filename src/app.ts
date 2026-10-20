@@ -48,33 +48,54 @@ export function buildApp(deps: Dependencies = {
     if (!identityMappingConfigured()) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_unverified' });
     try {
       await deps.db.query('SELECT 1');
-      // Check the reviewed identity source explicitly; an empty optional table list
-      // must never let readiness pass without the mapping relation being present.
-      const mappingName = `${config.IDENTITY_SCHEMA}.${config.IDENTITY_TABLE}`;
-      const mapping = await deps.db.query(
-        `SELECT to_regclass($1) IS NOT NULL AS present,
-                CASE WHEN to_regclass($1) IS NULL THEN FALSE
-                     ELSE has_table_privilege(current_user, to_regclass($1), 'SELECT') END AS can_select,
-                EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'schoolpro_runtime') AS runtime_role_present,
-                CASE WHEN to_regclass($1) IS NULL OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'schoolpro_runtime') THEN FALSE
-                     ELSE has_table_privilege('schoolpro_runtime', to_regclass($1), 'SELECT') END AS runtime_can_select`,
-        [mappingName]
+      // The API login must be a restricted non-owner role, separate from schoolpro_runtime.
+      // Membership bootstrap is via a SECURITY DEFINER function, never direct table SELECT.
+      const bootstrap = await deps.db.query(
+        `SELECT
+           current_user AS login_role,
+           (current_user <> 'avnadmin') AS login_not_admin,
+           NOT EXISTS (
+             SELECT 1 FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public'
+               AND c.relname IN ('schoolpro_members', 'schoolpro_schools')
+               AND c.relowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+           ) AS login_not_table_owner,
+           to_regprocedure('private.resolve_schoolpro_test_membership(uuid)') IS NOT NULL AS bootstrap_function_present,
+           CASE WHEN to_regprocedure('private.resolve_schoolpro_test_membership(uuid)') IS NULL THEN FALSE
+                ELSE has_function_privilege(current_user, to_regprocedure('private.resolve_schoolpro_test_membership(uuid)'), 'EXECUTE') END AS bootstrap_execute,
+           EXISTS (
+             SELECT 1 FROM pg_proc p
+             JOIN pg_namespace n ON n.oid = p.pronamespace
+             JOIN pg_roles owner_role ON owner_role.oid = p.proowner
+             WHERE n.nspname = 'private'
+               AND p.proname = 'resolve_schoolpro_test_membership'
+               AND pg_get_function_identity_arguments(p.oid) = 'p_user_id uuid'
+               AND owner_role.rolname = 'schoolpro_bootstrap_owner'
+               AND NOT owner_role.rolsuper
+               AND NOT owner_role.rolbypassrls
+           ) AS bootstrap_owner_safe,
+           EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'schoolpro_runtime') AS runtime_role_present,
+           has_column_privilege('schoolpro_runtime', 'public.schoolpro_members', 'user_id', 'SELECT') AS runtime_member_user_select,
+           has_column_privilege('schoolpro_runtime', 'public.schoolpro_members', 'school_id', 'SELECT') AS runtime_member_school_select,
+           has_column_privilege('schoolpro_runtime', 'public.schoolpro_members', 'role', 'SELECT') AS runtime_member_role_select,
+           has_column_privilege('schoolpro_runtime', 'public.schoolpro_schools', 'id', 'SELECT') AS runtime_school_id_select,
+           has_column_privilege('schoolpro_runtime', 'public.schoolpro_schools', 'owner_id', 'SELECT') AS runtime_school_owner_select,
+           has_schema_privilege('schoolpro_runtime', 'public', 'USAGE') AS runtime_public_usage
+        `
       );
-      if (mapping.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_relation_missing' });
-      if (mapping.rows[0]?.can_select !== true || mapping.rows[0]?.runtime_role_present !== true || mapping.rows[0]?.runtime_can_select !== true) {
-        return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
+      const bootstrapRow = bootstrap.rows[0];
+      if (!bootstrapRow?.login_not_admin || !bootstrapRow?.login_not_table_owner) {
+        return reply.code(503).send({ status: 'not_ready', reason: 'database_login_role_not_restricted' });
       }
-      const mappingColumns = [config.IDENTITY_USER_ID_COLUMN, config.IDENTITY_SCHOOL_ID_COLUMN, config.IDENTITY_ROLE_COLUMN];
-      for (const column of mappingColumns) {
-        if (!column) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_columns_unconfigured' });
-        const found = await deps.db.query(
-          `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3) AS present,
-                  CASE WHEN to_regclass($4) IS NULL THEN FALSE
-                       ELSE has_column_privilege('schoolpro_runtime', to_regclass($4), $3, 'SELECT') END AS runtime_can_select`,
-          [config.IDENTITY_SCHEMA, config.IDENTITY_TABLE, column, mappingName]
-        );
-        if (found.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_column_missing' });
-        if (found.rows[0]?.runtime_can_select !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
+      if (!bootstrapRow?.bootstrap_function_present || !bootstrapRow?.bootstrap_execute || !bootstrapRow?.bootstrap_owner_safe) {
+        return reply.code(503).send({ status: 'not_ready', reason: 'membership_bootstrap_not_configured' });
+      }
+      if (!bootstrapRow?.runtime_role_present || !bootstrapRow?.runtime_member_user_select
+        || !bootstrapRow?.runtime_member_school_select || !bootstrapRow?.runtime_member_role_select
+        || !bootstrapRow?.runtime_school_id_select || !bootstrapRow?.runtime_school_owner_select
+        || !bootstrapRow?.runtime_public_usage) {
+        return reply.code(503).send({ status: 'not_ready', reason: 'runtime_minimum_privileges_missing' });
       }
       const tables = requiredTables();
       for (const table of tables) {
