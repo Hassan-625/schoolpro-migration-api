@@ -8,6 +8,20 @@ import { IdentityMappingUnavailable, MembershipNotFound, ProfileInactive, Ambigu
 
 export type Dependencies = { db: typeof pool; supabase: SupabaseClient | null };
 export type AppOptions = { appEnv?: string; enableTestEndpoints?: boolean };
+
+async function readActiveProfileStatus(token: string, userId: string): Promise<string | null> {
+  if (!config.SUPABASE_URL || !config.SUPABASE_PUBLISHABLE_KEY) throw new Error('Supabase profile lookup is not configured');
+  // Use the verified user's bearer token for RLS; the service's publishable-key client alone
+  // does not establish auth.uid() and must not be used to read profile status as anon.
+  const userScopedClient = createClient(config.SUPABASE_URL, config.SUPABASE_PUBLISHABLE_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
+  const { data, error } = await userScopedClient.from('profiles').select('status').eq('id', userId).maybeSingle();
+  if (error) throw new Error('Supabase profile status lookup failed');
+  return data?.status ?? null;
+}
+
 export function buildApp(deps: Dependencies = {
   db: pool,
   supabase: config.SUPABASE_URL && config.SUPABASE_PUBLISHABLE_KEY
@@ -40,11 +54,16 @@ export function buildApp(deps: Dependencies = {
       const mapping = await deps.db.query(
         `SELECT to_regclass($1) IS NOT NULL AS present,
                 CASE WHEN to_regclass($1) IS NULL THEN FALSE
-                     ELSE has_table_privilege(current_user, to_regclass($1), 'SELECT') END AS can_select`,
+                     ELSE has_table_privilege(current_user, to_regclass($1), 'SELECT') END AS can_select,
+                EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'schoolpro_runtime') AS runtime_role_present,
+                CASE WHEN to_regclass($1) IS NULL OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'schoolpro_runtime') THEN FALSE
+                     ELSE has_table_privilege('schoolpro_runtime', to_regclass($1), 'SELECT') END AS runtime_can_select`,
         [mappingName]
       );
       if (mapping.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_relation_missing' });
-      if (mapping.rows[0]?.can_select !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
+      if (mapping.rows[0]?.can_select !== true || mapping.rows[0]?.runtime_role_present !== true || mapping.rows[0]?.runtime_can_select !== true) {
+        return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
+      }
       const mappingColumns = [config.IDENTITY_USER_ID_COLUMN, config.IDENTITY_SCHOOL_ID_COLUMN, config.IDENTITY_ROLE_COLUMN];
       for (const column of mappingColumns) {
         if (!column) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_columns_unconfigured' });
@@ -84,12 +103,14 @@ export function buildApp(deps: Dependencies = {
       return reply.code(401).send({ error: 'unauthorized' });
     }
     try {
-      const profile = await deps.supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
-      if (profile.error) return reply.code(503).send({ error: 'identity_mapping_unavailable' });
-      if (!profile.data || profile.data.status !== 'active') return reply.code(403).send({ error: 'profile_inactive' });
-      const membership = await resolveTestMembership(deps.db, userId, profile.data.status);
+      let profileStatus: string | null;
+      try { profileStatus = await readActiveProfileStatus(token, userId); }
+      catch { return reply.code(503).send({ error: 'identity_mapping_unavailable' }); }
+      if (profileStatus !== 'active') return reply.code(403).send({ error: 'profile_inactive' });
+      const membership = await resolveTestMembership(deps.db, userId, profileStatus);
       return reply.code(200).send({ userId, membership });
     } catch (error) {
+      if (error instanceof ProfileInactive) return reply.code(403).send({ error: 'profile_inactive' });
       if (error instanceof ProfileInactive) return reply.code(403).send({ error: 'profile_inactive' });
       if (error instanceof MembershipNotFound) return reply.code(403).send({ error: 'membership_not_found' });
       if (error instanceof AmbiguousMembership) return reply.code(409).send({ error: 'membership_ambiguous' });
@@ -121,9 +142,9 @@ export function buildApp(deps: Dependencies = {
     let client: PoolClient | null = null;
     let inTransaction = false;
     try {
-      const profile = await deps.supabase.from('profiles').select('status').eq('id', userId).maybeSingle();
-      if (profile.error || !profile.data || profile.data.status !== 'active') throw new IdentityMappingUnavailable('Active Supabase profile could not be verified');
-      const membership = await resolveTestMembership(deps.db, userId, profile.data.status);
+      const profileStatus = await readActiveProfileStatus(token, userId);
+      if (profileStatus !== 'active') throw new ProfileInactive('Active Supabase profile could not be verified');
+      const membership = await resolveTestMembership(deps.db, userId, profileStatus);
       client = await deps.db.connect();
       await client.query('BEGIN');
       inTransaction = true;
