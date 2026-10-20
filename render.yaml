@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: schoolpro-trusted-migration-api-staging
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run lint && npm run typecheck && npm run build && npm test
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: staging
+      - key: ENABLE_TEST_ENDPOINTS
+        value: "false"
+      - key: ALLOW_DESTRUCTIVE_TEST_FIXTURES
+        value: "false"
+      - key: IDENTITY_MAPPING_VERIFIED
+        value: "false"
+      - key: IDENTITY_SCHEMA
+        value: public
+      - key: IDENTITY_TABLE
+        sync: false
+      - key: IDENTITY_USER_ID_COLUMN
+        sync: false
+      - key: IDENTITY_SCHOOL_ID_COLUMN
+        sync: false
+      - key: IDENTITY_ROLE_COLUMN
+        sync: false
+      - key: IDENTITY_ACTIVE_COLUMN
+        sync: false
+      - key: TEST_ALLOWED_ROLES
+        sync: false
+      - key: SYNTHETIC_SCHOOL_A_ID
+        sync: false
+      - key: SYNTHETIC_SCHOOL_B_ID
+        sync: false
+      - key: REQUIRED_SCHEMA_TABLES
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
