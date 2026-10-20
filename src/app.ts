@@ -68,10 +68,13 @@ export function buildApp(deps: Dependencies = {
       for (const column of mappingColumns) {
         if (!column) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_columns_unconfigured' });
         const found = await deps.db.query(
-          'SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3) AS present',
-          [config.IDENTITY_SCHEMA, config.IDENTITY_TABLE, column]
+          `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3) AS present,
+                  CASE WHEN to_regclass($4) IS NULL THEN FALSE
+                       ELSE has_column_privilege('schoolpro_runtime', to_regclass($4), $3, 'SELECT') END AS runtime_can_select`,
+          [config.IDENTITY_SCHEMA, config.IDENTITY_TABLE, column, mappingName]
         );
         if (found.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_column_missing' });
+        if (found.rows[0]?.runtime_can_select !== true) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_select_not_granted' });
       }
       const tables = requiredTables();
       for (const table of tables) {
@@ -210,6 +213,10 @@ export function buildApp(deps: Dependencies = {
       if (client && inTransaction) {
         try { await client.query('ROLLBACK'); } catch { /* connection cleanup below */ }
       }
+      if (error instanceof ProfileInactive) return reply.code(403).send({ error: 'profile_inactive' });
+      if (error instanceof MembershipNotFound) return reply.code(403).send({ error: 'membership_not_found' });
+      if (error instanceof AmbiguousMembership) return reply.code(409).send({ error: 'membership_ambiguous' });
+      if (error instanceof UnauthorizedTestRole) return reply.code(403).send({ error: 'role_not_allowed_for_test' });
       request.log.warn({ errType: error instanceof Error ? error.name : 'unknown' }, 'runtime context verification failed');
       return reply.code(503).send({ error: 'runtime_context_unavailable' });
     } finally {
