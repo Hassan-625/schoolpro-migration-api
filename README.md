@@ -7,7 +7,7 @@ This is an isolated TypeScript/Fastify service for the SchoolPro Supabase-to-Aiv
 - `GET /health` is a process liveness response and does not disclose database details.
 - `GET /ready` checks database connectivity, configured prerequisite tables, and the reviewed-mapping gate.
 - `GET /v1/test/identity` is hidden unless `APP_ENV=staging` and `ENABLE_TEST_ENDPOINTS=true`. It verifies the bearer token with Supabase Auth `getUser(token)` and resolves membership from a server-configured table/column contract. It fails closed unless the mapping is explicitly reviewed, a single membership row is found, the role is allowlisted, and the school is one of the two operator-configured synthetic tenant UUIDs.
-- No general CRUD, arbitrary SQL, destructive fixture, or tenant-isolation endpoints are implemented in this tranche.
+- No general CRUD, arbitrary SQL, destructive fixture, or general tenant-isolation endpoints are implemented in this tranche. A staging-only `/v1/test/db-context` diagnostic now validates a transaction-local `SET LOCAL ROLE schoolpro_runtime`, the role's `NOBYPASSRLS`/non-owner invariants, and tenant/user/role GUC setup for an operator-configured synthetic tenant; it rolls back without reading or writing tenant data. This is a role/context diagnostic, not a tenant-isolation acceptance pass.
 - No migration/import/cutover is performed by this service.
 
 ## Local development
