@@ -80,7 +80,15 @@ export function buildApp(deps: Dependencies = {
                AND NOT owner_role.rolsuper
                AND NOT owner_role.rolbypassrls
            ) AS bootstrap_owner_safe,
-           EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'schoolpro_runtime') AS runtime_role_present,
+           EXISTS (
+             SELECT 1 FROM pg_roles runtime_role
+             WHERE runtime_role.rolname = 'schoolpro_runtime'
+               AND NOT runtime_role.rolsuper
+               AND NOT runtime_role.rolbypassrls
+               AND NOT runtime_role.rolcanlogin
+               AND NOT runtime_role.rolcreatedb
+               AND NOT runtime_role.rolcreaterole
+           ) AS runtime_role_safe,
            has_column_privilege('schoolpro_runtime', 'public.schoolpro_members', 'user_id', 'SELECT') AS runtime_member_user_select,
            has_column_privilege('schoolpro_runtime', 'public.schoolpro_members', 'school_id', 'SELECT') AS runtime_member_school_select,
            has_column_privilege('schoolpro_runtime', 'public.schoolpro_members', 'role', 'SELECT') AS runtime_member_role_select,
@@ -96,7 +104,7 @@ export function buildApp(deps: Dependencies = {
       if (!bootstrapRow?.bootstrap_function_present || !bootstrapRow?.bootstrap_execute || !bootstrapRow?.bootstrap_owner_safe) {
         return reply.code(503).send({ status: 'not_ready', reason: 'membership_bootstrap_not_configured' });
       }
-      if (!bootstrapRow?.runtime_role_present || !bootstrapRow?.runtime_member_user_select
+      if (!bootstrapRow?.runtime_role_safe || !bootstrapRow?.runtime_member_user_select
         || !bootstrapRow?.runtime_member_school_select || !bootstrapRow?.runtime_member_role_select
         || !bootstrapRow?.runtime_school_id_select || !bootstrapRow?.runtime_school_owner_select
         || !bootstrapRow?.runtime_public_usage) {
