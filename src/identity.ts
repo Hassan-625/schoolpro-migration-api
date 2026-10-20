@@ -8,6 +8,9 @@ export class IdentityMappingUnavailable extends Error {
 export class MembershipNotFound extends Error {
   constructor(message = 'No active school membership') { super(message); this.name = 'MembershipNotFound'; }
 }
+export class ProfileInactive extends Error {
+  constructor(message = 'The Supabase profile is missing or inactive') { super(message); this.name = 'ProfileInactive'; }
+}
 export class AmbiguousMembership extends Error {
   constructor(message = 'More than one active school membership') { super(message); this.name = 'AmbiguousMembership'; }
 }
@@ -15,27 +18,46 @@ export class UnauthorizedTestRole extends Error {
   constructor(message = 'Role is not approved for this test harness') { super(message); this.name = 'UnauthorizedTestRole'; }
 }
 
-export async function resolveTestMembership(db: Pool | PoolClient, authUserId: string): Promise<TestMembership> {
+type MembershipRow = { school_id: string | null; role: string | null };
+
+/** Pure fail-closed validation shared by the DB resolver and adversarial unit tests. */
+export function validateTestMembership(
+  rows: MembershipRow[],
+  profileStatus: string | null | undefined,
+  approvedRoles: string[],
+  allowedSchools: string[]
+): TestMembership {
+  if (profileStatus !== 'active') throw new ProfileInactive();
+  if (rows.length === 0) throw new MembershipNotFound();
+  if (rows.length !== 1) throw new AmbiguousMembership('More than one membership; a reviewed test-school selection contract is required');
+  const row = rows[0];
+  if (!row?.school_id || !row.role) throw new MembershipNotFound('Membership row is incomplete');
+  if (!approvedRoles.includes(row.role)) throw new UnauthorizedTestRole();
+  if (allowedSchools.length !== 2 || allowedSchools[0] === allowedSchools[1] || !allowedSchools.includes(row.school_id)) {
+    throw new IdentityMappingUnavailable('Synthetic School A/B allowlist is missing or membership is outside it');
+  }
+  return { schoolId: row.school_id, role: row.role };
+}
+
+export async function resolveTestMembership(
+  db: Pool | PoolClient,
+  authUserId: string,
+  profileStatus: string | null | undefined
+): Promise<TestMembership> {
   if (!identityMappingConfigured()) throw new IdentityMappingUnavailable('Identity mapping has not been reviewed and enabled');
+  // Source semantics: profiles.status is checked separately through Supabase Auth/Data API.
+  // schoolpro_members has no active flag; do not invent one on the rehearsal schema.
   const table = assertSafeIdentifier(config.IDENTITY_TABLE!);
   const userColumn = assertSafeIdentifier(config.IDENTITY_USER_ID_COLUMN!);
   const schoolColumn = assertSafeIdentifier(config.IDENTITY_SCHOOL_ID_COLUMN!);
   const roleColumn = assertSafeIdentifier(config.IDENTITY_ROLE_COLUMN!);
-  // Active-membership semantics are mandatory; never treat a historical/inactive row as current.
-  const activeColumn = assertSafeIdentifier(config.IDENTITY_ACTIVE_COLUMN!);
   const qualified = `"${config.IDENTITY_SCHEMA}"."${table}"`;
-  const activeClause = ` AND "${activeColumn}" = TRUE`;
-  const sql = `SELECT "${schoolColumn}"::text AS school_id, "${roleColumn}"::text AS role FROM ${qualified} WHERE "${userColumn}"::text = $1${activeClause} LIMIT 2`;
-  const result = await db.query<{ school_id: string | null; role: string | null }>(sql, [authUserId]);
-  if (result.rows.length === 0) throw new MembershipNotFound('No active school membership');
-  if (result.rows.length !== 1) throw new AmbiguousMembership('More than one membership; a reviewed test-school selection contract is required');
-  const row = result.rows[0];
-  if (!row?.school_id || !row.role) throw new MembershipNotFound('Membership row is incomplete');
-  if (!allowedTestRoles().includes(row.role)) throw new UnauthorizedTestRole('Role is not approved for this test harness');
-  // Only operator-provisioned synthetic tenants may be returned. Never accept a tenant ID from the request.
-  const allowedSchools = [config.SYNTHETIC_SCHOOL_A_ID, config.SYNTHETIC_SCHOOL_B_ID].filter((id): id is string => Boolean(id));
-  if (allowedSchools.length !== 2 || !allowedSchools.includes(row.school_id)) {
-    throw new IdentityMappingUnavailable('Synthetic School A/B allowlist is missing or membership is outside it');
-  }
-  return { schoolId: row.school_id, role: row.role };
+  const sql = `SELECT "${schoolColumn}"::text AS school_id, "${roleColumn}"::text AS role FROM ${qualified} WHERE "${userColumn}"::text = $1 LIMIT 2`;
+  const result = await db.query<MembershipRow>(sql, [authUserId]);
+  return validateTestMembership(
+    result.rows,
+    profileStatus,
+    allowedTestRoles(),
+    [config.SYNTHETIC_SCHOOL_A_ID, config.SYNTHETIC_SCHOOL_B_ID].filter((id): id is string => Boolean(id))
+  );
 }
