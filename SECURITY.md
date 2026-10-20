@@ -10,6 +10,11 @@
 - Destructive fixture flag cannot enable a fixture route; no fixture routes exist in this tranche.
 - Pool size and statement/connection timeouts are bounded; TLS certificate verification remains enabled.
 
+## Runtime context diagnostic added
+- `/v1/test/db-context` is hidden unless `APP_ENV=staging` and `ENABLE_TEST_ENDPOINTS=true`.
+- It verifies the bearer token server-side, resolves the existing reviewed synthetic membership contract, starts a transaction, uses the fixed SQL statement `SET LOCAL ROLE schoolpro_runtime`, sets transaction-local identity/tenant context from server-resolved values, checks the effective role is non-bypass and non-owner, and rolls back before releasing the connection.
+- It is diagnostic-only: no tenant table is read or mutated, and it does not prove any policy allows/denies the right rows. It fails closed if the login role cannot assume `schoolpro_runtime` or any invariant fails.
+
 ## Blocking prerequisites
 1. Review actual candidate Aiven schema and identify the authoritative user-to-school membership relation, active-membership semantics, role vocabulary, and handling of users with multiple school memberships.
 2. Define and review synthetic School A/B IDs and ensure no production records are used.
