@@ -39,6 +39,21 @@ export function validateTestMembership(
   return { schoolId: row.school_id, role: row.role };
 }
 
+export async function queryBootstrapMembership(
+  db: Pool | PoolClient,
+  authUserId: string
+): Promise<{ rows: MembershipRow[] }> {
+  // Never query schoolpro_members directly from the API login. Its RLS policy requires a
+  // tenant GUC, but no tenant can be trusted until this bootstrap lookup completes.
+  // The SECURITY DEFINER function is narrowly scoped by a DBA-maintained two-row allowlist.
+  // It accepts only the server-validated Supabase user ID; callers cannot supply tenant IDs.
+  // The API login needs EXECUTE on this function, not SELECT on the membership table.
+  return db.query<MembershipRow>(
+    'SELECT school_id::text AS school_id, role::text AS role FROM private.resolve_schoolpro_test_membership($1::uuid)',
+    [authUserId]
+  );
+}
+
 export async function resolveTestMembership(
   db: Pool | PoolClient,
   authUserId: string,
@@ -46,15 +61,7 @@ export async function resolveTestMembership(
 ): Promise<TestMembership> {
   if (!identityMappingConfigured()) throw new IdentityMappingUnavailable('Identity mapping has not been reviewed and enabled');
   // Source semantics: profiles.status is checked separately through Supabase Auth/Data API.
-  // Never query schoolpro_members directly from the API login. Its RLS policy requires a
-  // tenant GUC, but no tenant can be trusted until this bootstrap lookup completes.
-  // The SECURITY DEFINER function is narrowly scoped by a DBA-maintained two-row allowlist.
-  // It accepts only the server-validated Supabase user ID; callers cannot supply tenant IDs.
-  // The API login needs EXECUTE on this function, not SELECT on the membership table.
-  const result = await db.query<MembershipRow>(
-    'SELECT school_id::text AS school_id, role::text AS role FROM private.resolve_schoolpro_test_membership($1::uuid)',
-    [authUserId]
-  );
+  const result = await queryBootstrapMembership(db, authUserId);
   return validateTestMembership(
     result.rows,
     profileStatus,
