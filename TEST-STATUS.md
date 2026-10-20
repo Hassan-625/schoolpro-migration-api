@@ -13,6 +13,12 @@
 - Added a regression test for readiness when Auth verification is unavailable. This test is authored but not executed because Vitest dependencies are unavailable.
 - Latest local-only commit: `a267011cf249bdb9027b97c5ea0358a7a52e33c4`.
 
+## Runtime context endpoint checkpoint — 2026-10-20
+
+- Added staging-only `/v1/test/db-context`: validates server-side Supabase token, reviewed synthetic membership, transaction-scoped `SET LOCAL ROLE schoolpro_runtime`, transaction-local context, `NOBYPASSRLS`, non-ownership, and rollback/release cleanup. It performs no tenant data operation.
+- Added unit tests for hidden-by-default behavior, missing bearer token, and invalid-token rejection before pooled client acquisition. These tests are authored but require the CI run to execute them.
+- This does not prove live Aiven connectivity or tenant policy behavior. The Aiven PG Editor read was blocked by IP filtering (HTTP 403 from tool egress); no transient IP was allowlisted.
+
 ## Blocked / not passed
 
 - Dependency installation / lockfile: blocked. `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` timed out while attempting to reach the npm registry. Prior attempts reported `EAI_AGAIN registry.npmjs.org`. There is no `package-lock.json` yet.
