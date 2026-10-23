@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
-import { config, assertSafeIdentifier, identityMappingConfigured, allowedTestRoles } from './config.js';
+import { config, identityMappingConfigured, allowedTestRoles } from './config.js';
 
 export type TestMembership = { schoolId: string; role: string };
 export class IdentityMappingUnavailable extends Error {
@@ -39,6 +39,21 @@ export function validateTestMembership(
   return { schoolId: row.school_id, role: row.role };
 }
 
+export async function queryBootstrapMembership(
+  db: Pool | PoolClient,
+  authUserId: string
+): Promise<{ rows: MembershipRow[] }> {
+  // Never query schoolpro_members directly from the API login. Its RLS policy requires a
+  // tenant GUC, but no tenant can be trusted until this bootstrap lookup completes.
+  // The SECURITY DEFINER function is narrowly scoped by a DBA-maintained two-row allowlist.
+  // It accepts only the server-validated Supabase user ID; callers cannot supply tenant IDs.
+  // The API login needs EXECUTE on this function, not SELECT on the membership table.
+  return db.query<MembershipRow>(
+    'SELECT school_id::text AS school_id, role::text AS role FROM private.resolve_schoolpro_test_membership($1::uuid)',
+    [authUserId]
+  );
+}
+
 export async function resolveTestMembership(
   db: Pool | PoolClient,
   authUserId: string,
@@ -46,14 +61,7 @@ export async function resolveTestMembership(
 ): Promise<TestMembership> {
   if (!identityMappingConfigured()) throw new IdentityMappingUnavailable('Identity mapping has not been reviewed and enabled');
   // Source semantics: profiles.status is checked separately through Supabase Auth/Data API.
-  // schoolpro_members has no active flag; do not invent one on the rehearsal schema.
-  const table = assertSafeIdentifier(config.IDENTITY_TABLE!);
-  const userColumn = assertSafeIdentifier(config.IDENTITY_USER_ID_COLUMN!);
-  const schoolColumn = assertSafeIdentifier(config.IDENTITY_SCHOOL_ID_COLUMN!);
-  const roleColumn = assertSafeIdentifier(config.IDENTITY_ROLE_COLUMN!);
-  const qualified = `"${config.IDENTITY_SCHEMA}"."${table}"`;
-  const sql = `SELECT "${schoolColumn}"::text AS school_id, "${roleColumn}"::text AS role FROM ${qualified} WHERE "${userColumn}"::text = $1 LIMIT 2`;
-  const result = await db.query<MembershipRow>(sql, [authUserId]);
+  const result = await queryBootstrapMembership(db, authUserId);
   return validateTestMembership(
     result.rows,
     profileStatus,

@@ -1,0 +1,17 @@
+-- RETIRED — DO NOT EXECUTE.
+--
+-- This all-in-one bootstrap is superseded by:
+--   database/rehearsal-membership-bootstrap-phased-guide.md
+--   database/rehearsal-membership-bootstrap-phase-1.sql
+--   database/rehearsal-membership-bootstrap-phase-2.sql
+--   database/rehearsal-membership-bootstrap-phase-3.sql
+--   database/rehearsal-membership-bootstrap-phase-4.sql
+--   database/rehearsal-membership-bootstrap-phase-5.sql
+--
+-- Reason: the Aiven rehearsal database already contains schema private and the
+-- existing private.schoolpro_academic_clock table/policy. The old script assumes
+-- private does not exist and would stop. The revised phases reuse private and
+-- preserve existing objects. This comment-only file intentionally performs no SQL.
+--
+-- Do not create fixtures, provision a LOGIN, change Render, deploy, merge, or enable
+-- IDENTITY_MAPPING_VERIFIED until all authorization acceptance tests pass.
