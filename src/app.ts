@@ -42,7 +42,7 @@ export function buildApp(deps: Dependencies = {
 
   app.get('/health', async (_request, reply) => reply.code(200).send({ status: 'ok' }));
 
-  app.get('/ready', async (_request, reply) => {
+  app.get('/ready', async (request, reply) => {
     if (!deps.db) return reply.code(503).send({ status: 'not_ready', reason: 'database_not_configured' });
     if (!deps.supabase) return reply.code(503).send({ status: 'not_ready', reason: 'identity_verification_unavailable' });
     if (!identityMappingConfigured()) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_unverified' });
