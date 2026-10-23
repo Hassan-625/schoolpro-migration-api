@@ -46,8 +46,10 @@ export function buildApp(deps: Dependencies = {
     if (!deps.db) return reply.code(503).send({ status: 'not_ready', reason: 'database_not_configured' });
     if (!deps.supabase) return reply.code(503).send({ status: 'not_ready', reason: 'identity_verification_unavailable' });
     if (!identityMappingConfigured()) return reply.code(503).send({ status: 'not_ready', reason: 'identity_mapping_unverified' });
+    let readinessStage = 'database_ping';
     try {
       await deps.db.query('SELECT 1');
+      readinessStage = 'database_role_and_bootstrap_checks';
       // The API login must be a restricted non-owner role, separate from schoolpro_runtime.
       // Membership bootstrap is via a SECURITY DEFINER function, never direct table SELECT.
       const bootstrap = await deps.db.query(
@@ -110,13 +112,18 @@ export function buildApp(deps: Dependencies = {
         || !bootstrapRow?.runtime_public_usage) {
         return reply.code(503).send({ status: 'not_ready', reason: 'runtime_minimum_privileges_missing' });
       }
+      readinessStage = 'required_schema_table_checks';
       const tables = requiredTables();
       for (const table of tables) {
         const result = await deps.db.query('SELECT to_regclass($1) IS NOT NULL AS present', [`${table.schema}.${table.table}`]);
         if (result.rows[0]?.present !== true) return reply.code(503).send({ status: 'not_ready', reason: 'schema_prerequisite_missing' });
       }
       return reply.code(200).send({ status: 'ready' });
-    } catch {
+    } catch (error) {
+      request.log.warn(
+        { readinessStage, errType: error instanceof Error ? error.name : 'unknown' },
+        'readiness dependency check failed'
+      );
       return reply.code(503).send({ status: 'not_ready', reason: 'dependency_unavailable' });
     }
   });
