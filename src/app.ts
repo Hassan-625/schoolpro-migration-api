@@ -120,8 +120,17 @@ export function buildApp(deps: Dependencies = {
       }
       return reply.code(200).send({ status: 'ready' });
     } catch (error) {
+      const dbError = error instanceof Error
+        ? error as Error & { code?: string; syscall?: string; severity?: string }
+        : undefined;
       request.log.warn(
-        { readinessStage, errType: error instanceof Error ? error.name : 'unknown' },
+        {
+          readinessStage,
+          errType: error instanceof Error ? error.name : 'unknown',
+          errCode: dbError?.code,
+          errSyscall: dbError?.syscall,
+          errSeverity: dbError?.severity
+        },
         'readiness dependency check failed'
       );
       return reply.code(503).send({ status: 'not_ready', reason: 'dependency_unavailable' });
