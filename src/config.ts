@@ -12,6 +12,7 @@ const EnvSchema = z.object({
   ENABLE_TEST_ENDPOINTS: boolFromEnv.default(false),
   ALLOW_DESTRUCTIVE_TEST_FIXTURES: boolFromEnv.default(false),
   DATABASE_URL: z.string().url().optional(),
+  AIVEN_CA_CERT: z.string().min(1).optional(),
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_PUBLISHABLE_KEY: z.string().min(1).optional(),
   IDENTITY_MAPPING_VERIFIED: boolFromEnv.default(false),
